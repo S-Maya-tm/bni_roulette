@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>賞品抽選</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Bebas+Neue&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --gold: #F5C842; --deep: #0A0A1A; --card: #1C1C3A;
+    --text: #F0EEF8; --muted: #8884AA; --accent: #7B5FFF; --accent2: #FF5F9E;
+  }
+  body { font-family: 'Noto Sans JP', sans-serif; background: var(--deep); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .screen { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+  .screen.active { display: flex; }
+  #setup { background: radial-gradient(ellipse at 50% 0%, #1a1a40 0%, var(--deep) 70%); }
+  .setup-header { text-align: center; margin-bottom: 28px; }
+  .setup-header h1 { font-family: 'Bebas Neue', cursive; font-size: clamp(36px, 6vw, 64px); letter-spacing: 4px; color: var(--gold); text-shadow: 0 0 40px rgba(245,200,66,0.4); }
+  .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; width: 100%; max-width: 860px; }
+  .panel { background: var(--card); border: 1px solid rgba(123,95,255,0.2); border-radius: 16px; padding: 20px; }
+  .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .panel-title { font-size: 14px; font-weight: 700; letter-spacing: 2px; color: var(--gold); }
+  .toggle-btn { border-radius: 20px; padding: 4px 12px; font-family: inherit; font-size: 12px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .prize-text-input { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 10px 14px; color: var(--text); font-family: inherit; font-size: 15px; outline: none; transition: border-color 0.2s; margin-bottom: 8px; }
+  .prize-text-input:focus { border-color: var(--accent); }
+  #prize-display { font-size: 32px; font-weight: 900; color: var(--gold); text-align: center; padding: 16px 12px; background: rgba(245,200,66,0.08); border-radius: 10px; border: 1px solid rgba(245,200,66,0.25); min-height: 70px; display: flex; align-items: center; justify-content: center; line-height: 1.3; text-shadow: 0 0 20px rgba(245,200,66,0.4); }
+  .participant-row { display: grid; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .participant-row input { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px 12px; color: var(--text); font-family: inherit; font-size: 14px; outline: none; }
+  .del-btn { width: 36px; height: 36px; border-radius: 8px; border: 1px solid rgba(255,95,158,0.3); background: rgba(255,95,158,0.08); color: var(--accent2); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .del-btn:hover { background: rgba(255,95,158,0.2); }
+  .add-btn { background: rgba(123,95,255,0.12); border: 1px dashed rgba(123,95,255,0.4); border-radius: 8px; padding: 8px; color: var(--accent); cursor: pointer; font-size: 13px; font-family: inherit; width: 100%; margin-top: 4px; }
+  .add-btn:hover { background: rgba(123,95,255,0.25); }
+  .prob-total { font-size: 12px; text-align: right; color: var(--muted); margin-top: 4px; }
+  .prob-total.warn { color: #FF7A7A; }
+  .participants-scroll { max-height: 220px; overflow-y: auto; padding-right: 4px; }
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+  .start-section { width: 100%; max-width: 860px; margin-top: 20px; }
+  .start-btn { width: 100%; padding: 18px; border: none; border-radius: 14px; background: linear-gradient(135deg, var(--accent) 0%, #B44DFF 100%); color: #fff; font-family: 'Bebas Neue', cursive; font-size: 26px; letter-spacing: 4px; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; box-shadow: 0 4px 30px rgba(123,95,255,0.5); }
+  .start-btn:hover { transform: translateY(-2px); } .start-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .bottom-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+  .small-btn { border-radius: 20px; padding: 5px 14px; font-family: inherit; font-size: 12px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .share-panel { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px; margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .share-row { display: flex; gap: 8px; }
+  .share-btn { flex: 1; padding: 11px; border-radius: 10px; font-family: inherit; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+  .url-box { font-size: 11px; color: var(--muted); word-break: break-all; line-height: 1.6; padding: 8px 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; display: none; }
+  #roulette { background: radial-gradient(ellipse at 50% 40%, #1a0a35 0%, var(--deep) 70%); gap: 24px; }
+  .roulette-header { text-align: center; }
+  .prize-label-sm { font-size: 13px; letter-spacing: 3px; color: var(--muted); margin-bottom: 6px; }
+  .prize-name-lg { font-family: 'Bebas Neue', cursive; font-size: clamp(32px, 6vw, 62px); color: var(--gold); letter-spacing: 3px; text-shadow: 0 0 30px rgba(245,200,66,0.5); line-height: 1.1; }
+  .wheel-wrap { position: relative; width: min(400px, 80vw); height: min(400px, 80vw); }
+  .wheel-pointer { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); width: 0; height: 0; z-index: 10; border-left: 16px solid transparent; border-right: 16px solid transparent; border-top: 30px solid #FF0000; filter: drop-shadow(0 0 10px rgba(245,200,66,0.8)); }
+  canvas#wheel { border-radius: 50%; box-shadow: 0 0 60px rgba(123,95,255,0.4); }
+  .spin-btn { padding: 16px 60px; border: none; border-radius: 50px; background: linear-gradient(135deg, var(--gold) 0%, #FF9A1F 100%); color: #0A0A1A; font-family: 'Bebas Neue', cursive; font-size: 28px; letter-spacing: 4px; cursor: pointer; box-shadow: 0 4px 30px rgba(245,200,66,0.5); }
+  .spin-btn:hover { transform: translateY(-2px); } .spin-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .back-btn { position: absolute; top: 16px; left: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px 16px; color: var(--muted); font-family: inherit; cursor: pointer; font-size: 13px; }
+  #winner { background: radial-gradient(ellipse at 50% 30%, #2a1040 0%, var(--deep) 70%); text-align: center; }
+  .fireworks { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  .winner-content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .winner-label { font-size: 14px; letter-spacing: 4px; color: var(--muted); }
+  .winner-crown { font-size: 72px; animation: float 3s ease-in-out infinite; }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+  .winner-name { font-family: 'Bebas Neue', cursive; font-size: clamp(52px, 12vw, 100px); color: var(--gold); letter-spacing: 6px; animation: glow 2s ease-in-out infinite; }
+  .winner-congrats { font-family: 'Noto Sans JP', sans-serif; font-size: clamp(22px, 4vw, 36px); font-weight: 900; color: var(--text); margin-top: 8px; letter-spacing: 2px; }
+  @keyframes glow { 0%,100%{text-shadow:0 0 60px rgba(245,200,66,0.6)} 50%{text-shadow:0 0 80px rgba(245,200,66,0.9)} }
+  .winner-prize { font-size: 20px; opacity: 0.8; }
+  .winner-prize span { color: var(--gold); font-weight: 700; }
+  .winner-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .action-btn { padding: 12px 28px; border-radius: 10px; font-family: inherit; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+  .btn-again { background: linear-gradient(135deg, var(--accent), #B44DFF); border: none; color: #fff; font-weight: 700; }
+  .btn-setup { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: var(--muted); }
+  .overlay { position: fixed; inset: 0; background: var(--deep); z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.4s; }
+  .overlay.fade-in { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="overlay" id="overlay"></div>
+
+<!-- ══ SETUP ══ -->
+<div class="screen active" id="setup">
+  <div class="setup-header"><h1>🎰 賞品抽選</h1></div>
+  <div class="setup-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">🎁 今週の賞品</span>
+        <button class="toggle-btn" id="btn-prize-toggle" onclick="togglePrize()"
+          style="background:rgba(245,200,66,0.15);border:1px solid rgba(245,200,66,0.4);color:var(--gold);">入力欄を非表示</button>
+      </div>
+      <div id="prize-input-wrap">
+        <input class="prize-text-input" type="text" id="prize-input" placeholder="例：Amazonギフト券 5,000円" oninput="onPrizeInput(this.value)" />
+      </div>
+      <div id="prize-display">—</div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">👥 参加者</span>
+        <button class="toggle-btn" id="btn-prob-toggle" onclick="toggleProb()"
+          style="background:rgba(123,95,255,0.15);border:1px solid rgba(123,95,255,0.4);color:var(--accent);">確率を非表示</button>
+      </div>
+      <div id="prob-col-header" style="display:grid;grid-template-columns:1fr 90px 36px;gap:8px;margin-bottom:6px;">
+        <span style="font-size:11px;color:var(--muted);padding-left:4px;">名前</span>
+        <span id="prob-col-label" style="font-size:11px;color:var(--muted);text-align:center;">確率 (%)</span>
+        <span></span>
+      </div>
+      <div class="participants-scroll" id="participants-list"></div>
+      <button class="add-btn" onclick="addParticipant()">＋ 参加者を追加</button>
+      <div class="prob-total" id="prob-total">合計: 0%</div>
+    </div>
+  </div>
+  <div class="start-section">
+    <button class="start-btn" id="go-btn" onclick="goToRoulette()" disabled>▶ ルーレットを開始</button>
+    <div class="bottom-row">
+      <button class="small-btn" onclick="resetData()" id="btn-reset"
+        style="background:rgba(255,95,158,0.08);border:1px solid rgba(255,95,158,0.25);color:var(--accent2);">🗑 リセット</button>
+      <button class="small-btn" id="btn-share-toggle" onclick="toggleSharePanel()"
+        style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:var(--muted);">🔗 共有URLを表示</button>
+    </div>
+    <div class="share-panel" id="share-panel" style="display:none;">
+      <div class="share-row">
+        <button class="share-btn" onclick="generateShareURL()"
+          style="border:1px solid rgba(245,200,66,0.4);background:rgba(245,200,66,0.1);color:var(--gold);">🔗 共有URLを生成</button>
+        <button class="share-btn" id="btn-copy" onclick="copyShareURL()"
+          style="border:1px solid rgba(123,95,255,0.4);background:rgba(123,95,255,0.1);color:var(--accent);display:none;">📋 URLをコピー</button>
+      </div>
+      <div class="url-box" id="url-box"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ROULETTE ══ -->
+<div class="screen" id="roulette">
+  <button class="back-btn" onclick="goBack()">← 設定に戻る</button>
+  <div class="roulette-header">
+    <div class="prize-name-lg" id="roulette-prize">—</div>
+  </div>
+  <div class="wheel-wrap">
+    <div class="wheel-pointer"></div>
+    <canvas id="wheel" width="400" height="400"></canvas>
+  </div>
+  <button class="spin-btn" id="spin-btn" onclick="startSpin()">START</button>
+</div>
+
+<!-- ══ WINNER ══ -->
+<div class="screen" id="winner">
+  <canvas class="fireworks" id="fireworks"></canvas>
+  <div class="winner-content">
+    <div class="winner-crown">👑</div>
+    <div class="winner-name" id="winner-name">—</div>
+    <div class="winner-congrats">おめでとうございます！</div>
+  </div>
+</div>
+
+<script>
+let participants = [];
+let currentPrize = '';
+let spinning = false;
+let currentAngle = 0;
+let animFrame, fireworksCtx;
+let fireworksParticles = [];
+let generatedURL = '';
+let showPrizeInput = true;
+let showProb = true;
+
+const COLORS = ['#7B5FFF','#FF5F9E','#F5C842','#00D4AA','#FF7A1F','#5FC8FF','#B44DFF','#FF4D6A','#1FD870','#FFB347'];
+
+// ══ トグル ══
+function togglePrize() {
+  showPrizeInput = !showPrizeInput;
+  applyPrizeToggle();
+  saveLocal();
+}
+function applyPrizeToggle() {
+  document.getElementById('prize-input-wrap').style.display = showPrizeInput ? '' : 'none';
+  const btn = document.getElementById('btn-prize-toggle');
+  btn.textContent = showPrizeInput ? '入力欄を非表示' : '入力欄を表示';
+  btn.style.background = showPrizeInput ? 'rgba(245,200,66,0.15)' : 'rgba(255,255,255,0.06)';
+  btn.style.color = showPrizeInput ? 'var(--gold)' : 'var(--muted)';
+  btn.style.borderColor = showPrizeInput ? 'rgba(245,200,66,0.4)' : 'rgba(255,255,255,0.15)';
+}
+function toggleProb() {
+  showProb = !showProb;
+  applyProbToggle();
+  renderParticipants();
+  saveLocal();
+}
+function applyProbToggle() {
+  const btn = document.getElementById('btn-prob-toggle');
+  btn.textContent = showProb ? '確率を非表示' : '確率を表示';
+  btn.style.background = showProb ? 'rgba(123,95,255,0.15)' : 'rgba(255,255,255,0.06)';
+  btn.style.color = showProb ? 'var(--accent)' : 'var(--muted)';
+  btn.style.borderColor = showProb ? 'rgba(123,95,255,0.4)' : 'rgba(255,255,255,0.15)';
+  const header = document.getElementById('prob-col-header');
+  header.style.gridTemplateColumns = showProb ? '1fr 90px 36px' : '1fr 36px';
+  document.getElementById('prob-col-label').style.display = showProb ? '' : 'none';
+  document.getElementById('prob-total').style.display = showProb ? '' : 'none';
+}
+function toggleSharePanel() {
+  const panel = document.getElementById('share-panel');
+  const visible = panel.style.display === 'none';
+  panel.style.display = visible ? 'flex' : 'none';
+  const btn = document.getElementById('btn-share-toggle');
+  btn.textContent = visible ? '🔗 共有URLを非表示' : '🔗 共有URLを表示';
+  btn.style.color = visible ? 'var(--gold)' : 'var(--muted)';
+  btn.style.borderColor = visible ? 'rgba(245,200,66,0.4)' : 'rgba(255,255,255,0.15)';
+  btn.style.background = visible ? 'rgba(245,200,66,0.1)' : 'rgba(255,255,255,0.06)';
+}
+
+// ══ 賞品 ══
+function onPrizeInput(val) {
+  currentPrize = val.trim();
+  document.getElementById('prize-display').textContent = currentPrize || '—';
+  validateForm();
+  saveLocal();
+}
+
+// ══ 参加者 ══
+function addParticipant(name='', prob='') {
+  participants.push({ id: Date.now() + Math.random(), name, prob });
+  renderParticipants();
+  saveLocal();
+}
+function removeParticipant(id) {
+  participants = participants.filter(p => p.id !== id);
+  renderParticipants();
+  saveLocal();
+}
+function updateParticipant(el) {
+  const p = participants.find(p => p.id === parseFloat(el.dataset.id));
+  if (!p) return;
+  p[el.dataset.field] = el.value;
+  if (el.dataset.field === 'prob') updateProbTotal();
+  validateForm();
+  saveLocal();
+}
+function renderParticipants() {
+  const cols = showProb ? '1fr 90px 36px' : '1fr 36px';
+  document.getElementById('participants-list').innerHTML = participants.map(p => `
+    <div class="participant-row" style="grid-template-columns:${cols}">
+      <input type="text" placeholder="名前" value="${p.name}" data-id="${p.id}" data-field="name" oninput="updateParticipant(this)" />
+      ${showProb ? `<input type="number" placeholder="%" value="${p.prob}" min="0" max="100" step="0.1" data-id="${p.id}" data-field="prob" oninput="updateParticipant(this)" style="text-align:center;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px;color:var(--text);font-family:inherit;font-size:14px;outline:none;" />` : ''}
+      <button class="del-btn" onclick="removeParticipant(${p.id})">×</button>
+    </div>
+  `).join('');
+  updateProbTotal();
+  validateForm();
+}
+function updateProbTotal() {
+  const total = participants.reduce((s,p) => s + (parseFloat(p.prob)||0), 0);
+  const el = document.getElementById('prob-total');
+  el.textContent = `合計: ${Math.round(total*10)/10}%`;
+  el.className = 'prob-total' + (Math.abs(total-100) > 0.5 ? ' warn' : '');
+}
+function validateForm() {
+  const total = participants.reduce((s,p) => s + (parseFloat(p.prob)||0), 0);
+  const totalOk = !showProb || Math.abs(total-100) <= 0.5;
+  const valid = currentPrize.length > 0
+    && participants.length >= 2
+    && participants.every(p => p.name.trim() && parseFloat(p.prob) > 0)
+    && totalOk;
+  document.getElementById('go-btn').disabled = !valid;
+}
+
+// ══ 保存・読込 ══
+function buildData() {
+  return { prize: currentPrize, participants, showPrizeInput, showProb };
+}
+function saveLocal() {
+  try { localStorage.setItem('roulette_v2', JSON.stringify(buildData())); } catch(e) {}
+}
+function applyData(data) {
+  currentPrize = data.prize || '';
+  document.getElementById('prize-input').value = currentPrize;
+  document.getElementById('prize-display').textContent = currentPrize || '—';
+  participants = (data.participants || []).map(p => ({ ...p, id: Date.now() + Math.random() }));
+  showPrizeInput = data.showPrizeInput !== false;
+  showProb = data.showProb !== false;
+  applyPrizeToggle();
+  applyProbToggle();
+  renderParticipants();
+  validateForm();
+}
+function loadData() {
+  try {
+    const raw = new URLSearchParams(location.search).get('data');
+    if (raw) { applyData(JSON.parse(decodeURIComponent(raw))); saveLocal(); return; }
+    const saved = localStorage.getItem('roulette_v2');
+    if (saved) { applyData(JSON.parse(saved)); return; }
+  } catch(e) {}
+  addParticipant('田中 一郎', '40');
+  addParticipant('鈴木 花子', '35');
+  addParticipant('佐藤 次郎', '25');
+  document.getElementById('prize-input').value = 'Amazonギフト券 5,000円';
+  onPrizeInput('Amazonギフト券 5,000円');
+}
+
+// ══ リセット ══
+function resetData() {
+  if (!confirm('保存データをリセットしますか？')) return;
+  localStorage.removeItem('roulette_v2');
+  participants = []; currentPrize = ''; showPrizeInput = true; showProb = true;
+  document.getElementById('prize-input').value = '';
+  document.getElementById('prize-display').textContent = '—';
+  applyPrizeToggle(); applyProbToggle(); renderParticipants(); validateForm();
+  const btn = document.getElementById('btn-reset');
+  btn.textContent = '✅ リセット完了！';
+  setTimeout(() => { btn.textContent = '🗑 リセット'; }, 2000);
+}
+
+// ══ 共有URL ══
+function generateShareURL() {
+  generatedURL = location.href.split('?')[0] + '?data=' + encodeURIComponent(JSON.stringify(buildData()));
+  document.getElementById('url-box').textContent = generatedURL;
+  document.getElementById('url-box').style.display = 'block';
+  document.getElementById('btn-copy').style.display = 'block';
+}
+function copyShareURL() {
+  if (!generatedURL) return;
+  navigator.clipboard.writeText(generatedURL).then(() => {
+    const btn = document.getElementById('btn-copy');
+    btn.textContent = '✅ コピーしました！'; btn.style.color = '#00D4AA';
+    setTimeout(() => { btn.textContent = '📋 URLをコピー'; btn.style.color = 'var(--accent)'; }, 2500);
+  });
+}
+
+// ══ 画面遷移 ══
+function setScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+function fadeTransition(cb) { const ov = document.getElementById('overlay'); ov.classList.add('fade-in'); setTimeout(() => { cb(); ov.classList.remove('fade-in'); }, 400); }
+function goToRoulette() { document.getElementById('roulette-prize').textContent = currentPrize; document.getElementById('spin-btn').disabled = false; document.getElementById('spin-btn').textContent = 'START'; spinning = false; currentAngle = 0; fadeTransition(() => { setScreen('roulette'); drawWheel(0); }); }
+function goBack() { cancelAnimationFrame(animFrame); spinning = false; currentAngle = 0; document.getElementById('spin-btn').disabled = false; document.getElementById('spin-btn').textContent = 'START'; fadeTransition(() => { setScreen('setup'); }); }
+function goToSetup() { cancelAnimationFrame(animFrame); spinning = false; fadeTransition(() => setScreen('setup')); }
+
+// ══ ホイール ══
+function getValid() { return participants.map(p => ({ name: p.name.trim(), prob: parseFloat(p.prob)||0 })).filter(p => p.prob > 0); }
+function drawWheel(angle) {
+  const canvas = document.getElementById('wheel');
+  const ctx = canvas.getContext('2d');
+  const cx = canvas.width/2, cy = canvas.height/2, r = canvas.width/2 - 4;
+  const parts = getValid(), total = parts.reduce((s,p) => s+p.prob, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  let start = angle - Math.PI/2;
+  parts.forEach((p, i) => {
+    const sweep = (p.prob/total) * Math.PI*2, mid = start + sweep/2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,start+sweep); ctx.closePath();
+    ctx.fillStyle = COLORS[i%COLORS.length]; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2; ctx.stroke();
+
+    // 名前テキスト：スライスの広さに応じてフォントサイズ・位置を調整
+    const sliceDeg = sweep * 180 / Math.PI;
+    const fontSize = Math.max(9, Math.min(15, sliceDeg * 0.55));
+    const textR = r * 0.62;
+    const name = p.name;
+
+    ctx.save();
+    ctx.translate(cx + Math.cos(mid)*textR, cy + Math.sin(mid)*textR);
+    ctx.rotate(mid + Math.PI/2);
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 3;
+
+    // 長い名前は2行に分割
+    if (name.length <= 5 || sliceDeg >= 60) {
+      ctx.fillText(name, 0, fontSize * 0.4);
+    } else {
+      const mid1 = Math.ceil(name.length / 2);
+      ctx.fillText(name.slice(0, mid1), 0, -fontSize * 0.3);
+      ctx.fillText(name.slice(mid1), 0, fontSize * 0.9);
+    }
+    ctx.restore();
+    start += sweep;
+  });
+  ctx.beginPath(); ctx.arc(cx,cy,28,0,Math.PI*2); ctx.fillStyle = '#0A0A1A'; ctx.fill();
+  ctx.strokeStyle = 'rgba(245,200,66,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#F5C842'; ctx.font = `bold 14px 'Noto Sans JP', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('GO', cx, cy);
+}
+
+// ══ スピン ══
+function pickWinner() { const parts = getValid(), total = parts.reduce((s,p)=>s+p.prob,0); let r = Math.random()*total; for (const p of parts) { r -= p.prob; if (r<=0) return p; } return parts[parts.length-1]; }
+function startSpin() {
+  if (spinning) return;
+  spinning = true;
+  document.getElementById('spin-btn').disabled = true;
+  document.getElementById('spin-btn').textContent = '…';
+  const parts = getValid();
+  const total = parts.reduce((s,p) => s+p.prob, 0);
+
+  // 当選スライスをインデックスで選ぶ
+  let r = Math.random() * total, winnerIndex = parts.length - 1;
+  for (let i = 0; i < parts.length; i++) {
+    r -= parts[i].prob;
+    if (r <= 0) { winnerIndex = i; break; }
+  }
+
+  // スライスの開始角度・中心角度を計算（drawWheelと同じ基準: angle - PI/2 から始まる）
+  // currentAngle=0 のとき start = -PI/2
+  // 各スライスの絶対開始角 = -PI/2 + Σ(前スライスのsweep)
+  let angleSum = 0;
+  for (let i = 0; i < winnerIndex; i++) {
+    angleSum += (parts[i].prob / total) * Math.PI * 2;
+  }
+  const winnerSweep = (parts[winnerIndex].prob / total) * Math.PI * 2;
+  // スライス中心の、angle=0基準での位置
+  const sliceCenter = angleSum + winnerSweep / 2;
+
+  // ポインターは常に上（-PI/2）を指す
+  // drawWheelでは start = angle - PI/2 なので
+  // ポインターに合わせるには: angle - PI/2 + sliceCenter = -PI/2
+  // → angle = -sliceCenter
+  const extraSpins = Math.PI * 2 * (8 + Math.random() * 4);
+  const targetAngle = -sliceCenter + extraSpins;
+
+  animateSpin(currentAngle, targetAngle, 10000, parts[winnerIndex]);
+}
+function animateSpin(from, to, dur, winner) {
+  const t0 = performance.now();
+  function ease(t) { return 1 - Math.pow(1-t, 4); }
+  function frame(now) {
+    const t = Math.min((now-t0)/dur, 1);
+    currentAngle = from + (to-from)*ease(t);
+    drawWheel(currentAngle);
+    if (t < 1) { animFrame = requestAnimationFrame(frame); }
+    else {
+      currentAngle = to;
+      spinning = false;
+      // ポインターが実際に指しているスライスを読み取る
+      const actual = getSliceAtPointer(currentAngle);
+      setTimeout(() => showWinner(actual || winner), 400);
+    }
+  }
+  animFrame = requestAnimationFrame(frame);
+}
+
+function getSliceAtPointer(angle) {
+  const parts = getValid();
+  const total = parts.reduce((s,p) => s+p.prob, 0);
+  // ポインターは上(-PI/2)を指す
+  // drawWheelのstart = angle - PI/2 から順にスライスが並ぶ
+  // ポインターが指す角度をスライス空間に変換
+  let pointer = -angle; // スライス空間でのポインター位置
+  pointer = ((pointer % (Math.PI*2)) + Math.PI*2) % (Math.PI*2); // 0〜2PIに正規化
+  let cum = 0;
+  for (const p of parts) {
+    const sweep = (p.prob/total)*Math.PI*2;
+    if (pointer < cum + sweep) return p;
+    cum += sweep;
+  }
+  return parts[parts.length-1];
+}
+function showWinner(winner) {
+  document.getElementById('winner-name').textContent = winner.name;
+  fadeTransition(() => { setScreen('winner'); startFireworks(); });
+}
+
+// ══ 花火 ══
+function startFireworks() {
+  const c = document.getElementById('fireworks');
+  c.width = innerWidth; c.height = innerHeight;
+  fireworksCtx = c.getContext('2d'); fireworksParticles = [];
+  launchFirework(); launchFirework(); requestAnimationFrame(animFW);
+}
+function launchFirework() {
+  const x = Math.random()*innerWidth, y = Math.random()*innerHeight*0.6;
+  const clrs = ['#F5C842','#7B5FFF','#FF5F9E','#00D4AA','#FF7A1F','#fff'];
+  const color = clrs[Math.floor(Math.random()*clrs.length)];
+  for (let i=0; i<60; i++) { const a=Math.PI*2*i/60, s=2+Math.random()*5; fireworksParticles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,alpha:1,color,size:2+Math.random()*3,life:80+Math.random()*60}); }
+}
+function animFW() {
+  if (!document.getElementById('winner').classList.contains('active')) return;
+  fireworksCtx.clearRect(0,0,fireworksCtx.canvas.width,fireworksCtx.canvas.height);
+  fireworksParticles = fireworksParticles.filter(p=>p.alpha>0.01);
+  fireworksParticles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.vy+=0.08; p.vx*=0.98; p.alpha-=1/p.life; fireworksCtx.beginPath(); fireworksCtx.arc(p.x,p.y,p.size,0,Math.PI*2); fireworksCtx.fillStyle=p.color; fireworksCtx.globalAlpha=p.alpha; fireworksCtx.fill(); fireworksCtx.globalAlpha=1; });
+  if (Math.random()<0.04) launchFirework();
+  requestAnimationFrame(animFW);
+}
+
+loadData();
+</script>
+</body>
+</html>

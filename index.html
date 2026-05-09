@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#fff7ed">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="BNI ルーレット">
+  <title>BNI お題ルーレット</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Righteous&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #fff7ed;
+      --surface: #ffffff;
+      --surface2: #fef3e2;
+      --border: rgba(0,0,0,0.07);
+      --border2: rgba(0,0,0,0.12);
+      --text: #1a1208;
+      --text2: rgba(26,18,8,0.55);
+      --text3: rgba(26,18,8,0.32);
+      --accent: #ff6b2b;
+      --accent2: #ffb800;
+      --accent3: #00c07f;
+      --accent4: #4f7fff;
+      --radius: 20px;
+      --radius-sm: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-image:
+        radial-gradient(circle at 10% 10%, rgba(255,184,0,0.18) 0%, transparent 50%),
+        radial-gradient(circle at 90% 20%, rgba(255,107,43,0.14) 0%, transparent 45%),
+        radial-gradient(circle at 60% 80%, rgba(0,192,127,0.12) 0%, transparent 40%);
+    }
+
+    .app {
+      width: 100%;
+      max-width: 440px;
+      padding: 2rem 1.25rem 4rem;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header { text-align: center; margin-bottom: 1.5rem; }
+    .header-label {
+      display: inline-block;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--accent); background: rgba(255,107,43,0.1);
+      padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;
+    }
+    .header-title {
+      font-family: 'Righteous', sans-serif;
+      font-size: 34px; color: var(--text);
+      line-height: 1.1; font-weight: 400;
+      letter-spacing: -0.5px;
+    }
+    .header-title span { color: var(--accent); }
+
+    /* BGM */
+    .bgm-row { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+    .bgm-btn {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--surface); border: 1.5px solid var(--border2);
+      border-radius: 20px; padding: 6px 14px;
+      font-size: 12px; font-weight: 500; color: var(--text2);
+      cursor: pointer; font-family: 'Noto Sans JP', sans-serif;
+      transition: all 0.15s; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .bgm-btn.on {
+      color: var(--accent); border-color: var(--accent);
+      background: rgba(255,107,43,0.06);
+    }
+
+    /* Result box */
+    .result-box {
+      background: var(--surface);
+      border: 2px solid var(--border2);
+      border-radius: var(--radius);
+      min-height: 130px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 1.5rem 1.75rem;
+      text-align: center;
+      margin-bottom: 1rem;
+      position: relative; overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    }
+    .result-stripe {
+      position: absolute; top: 0; left: 0; right: 0; height: 5px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent3), var(--accent4));
+    }
+    .result-text {
+      font-size: 21px; font-weight: 700;
+      color: var(--text); line-height: 1.5;
+    }
+    .result-placeholder { font-size: 14px; color: var(--text3); }
+
+    @keyframes pop-in {
+      from { transform: scale(0.9) translateY(6px); opacity: 0; }
+      to   { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    .pop { animation: pop-in 0.35s cubic-bezier(0.34,1.56,0.64,1); }
+
+    .dots { display: flex; gap: 8px; align-items: center; justify-content: center; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; animation: bounce 0.9s infinite ease-in-out; }
+    .dot:nth-child(1) { background: var(--accent);  animation-delay: 0s; }
+    .dot:nth-child(2) { background: var(--accent2); animation-delay: 0.15s; }
+    .dot:nth-child(3) { background: var(--accent3); animation-delay: 0.3s; }
+    @keyframes bounce { 0%,80%,100% { transform: scale(0.5); opacity: 0.4; } 40% { transform: scale(1.1); opacity: 1; } }
+
+    /* Spin button */
+    .spin-btn {
+      width: 100%; padding: 17px;
+      background: linear-gradient(135deg, var(--accent) 0%, #ff8c42 100%);
+      color: #fff; border: none;
+      border-radius: var(--radius-sm);
+      font-size: 17px; font-weight: 900;
+      font-family: 'Noto Sans JP', sans-serif;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      margin-bottom: 0.75rem;
+      letter-spacing: 0.05em;
+      box-shadow: 0 4px 20px rgba(255,107,43,0.35);
+    }
+    .spin-btn:hover:not(:disabled) { opacity: 0.9; }
+    .spin-btn:active:not(:disabled) { transform: scale(0.97); }
+    .spin-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+    /* Remain */
+    .remain-line {
+      text-align: center; font-size: 12px;
+      color: var(--text3); margin-bottom: 2rem;
+    }
+    .remain-line strong { color: var(--accent3); font-weight: 700; }
+
+    /* History */
+    .history-section {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+    .history-header {
+      display: flex; justify-content: space-between;
+      align-items: center; margin-bottom: 0.875rem;
+    }
+    .history-title {
+      font-size: 12px; font-weight: 700;
+      color: var(--text2); letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .history-meta { display: flex; align-items: center; gap: 10px; }
+    .history-count { font-size: 11px; color: var(--text3); }
+    .reset-btn {
+      font-size: 11px; color: var(--text3);
+      background: none; border: 1.5px solid var(--border2);
+      border-radius: 8px; padding: 3px 10px;
+      cursor: pointer; font-family: 'Noto Sans JP', sans-serif;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .reset-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    .history-items { display: flex; flex-direction: column; gap: 6px; }
+    .history-item {
+      font-size: 12px; color: var(--text2);
+      background: var(--surface2);
+      border-radius: 10px; padding: 7px 11px;
+      line-height: 1.45;
+      border-left: 3px solid var(--accent2);
+    }
+    .history-empty {
+      font-size: 12px; color: var(--text3);
+      text-align: center; padding: 1rem 0;
+    }
+
+    /* Counter chips */
+    .chip-row {
+      display: flex; gap: 8px; margin-bottom: 1.5rem;
+    }
+    .chip {
+      flex: 1; border-radius: 12px; padding: 10px 8px;
+      text-align: center; border: 1.5px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+    }
+    .chip-label { font-size: 10px; color: var(--text3); font-weight: 500; margin-bottom: 2px; }
+    .chip-val { font-size: 22px; font-weight: 900; color: var(--text); }
+    .chip-val.green { color: var(--accent3); }
+
+    .install-hint {
+      text-align: center; font-size: 11px;
+      color: var(--text3); margin-top: 2rem; line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="header-label">BNI Team Meeting</div>
+    <div class="header-title">お題<span>ルーレット</span></div>
+  </div>
+
+  <div class="bgm-row">
+    <button class="bgm-btn" id="bgm-btn" onclick="toggleBgm()">
+      ♪ <span id="bgm-label">BGM OFF</span>
+    </button>
+  </div>
+
+  <div class="result-box">
+    <div class="result-stripe"></div>
+    <span class="result-placeholder" id="result-inner">ボタンを押してお題を出す</span>
+  </div>
+
+  <button class="spin-btn" id="spin-btn" onclick="spin()">🎲 まわす</button>
+
+  <div class="chip-row">
+    <div class="chip">
+      <div class="chip-label">使用済み</div>
+      <div class="chip-val" id="used-count">0</div>
+    </div>
+    <div class="chip">
+      <div class="chip-label">残り</div>
+      <div class="chip-val green" id="remain-count">50</div>
+    </div>
+  </div>
+
+  <div class="history-section">
+    <div class="history-header">
+      <span class="history-title">使用済みお題</span>
+      <div class="history-meta">
+        <span class="history-count" id="history-count">0件</span>
+        <button class="reset-btn" onclick="resetAll()">リセット</button>
+      </div>
+    </div>
+    <div class="history-items" id="history-list">
+      <div class="history-empty">まだありません</div>
+    </div>
+  </div>
+
+  <div class="install-hint">
+    iPhone: Safari → 共有 → 「ホーム画面に追加」<br>
+    Android: Chrome → メニュー → 「アプリをインストール」
+  </div>
+</div>
+
+<script>
+const TOPICS = [
+  {id:0,  text:"最近ビジター招待できたきっかけ共有"},
+  {id:1,  text:"招待しやすかった声掛け方法"},
+  {id:2,  text:"「この人BNI向いてそう」を共有"},
+  {id:3,  text:"招待すると反応が良い業種"},
+  {id:4,  text:"既存顧客で招待できそうな人洗い出し"},
+  {id:5,  text:"今チャプターに足りないカテゴリー確認"},
+  {id:6,  text:"ビジターが来やすい定例会の雰囲気とは？"},
+  {id:7,  text:"ビジターが「また来たい」と思うポイント"},
+  {id:8,  text:"招待後のフォローで工夫していること"},
+  {id:9,  text:"ビジターに説明しやすいBNIの魅力とは？"},
+  {id:10, text:"半年後、どんなチャプターにしたい？"},
+  {id:11, text:"拡大しているチャプターの共通点とは？"},
+  {id:12, text:"定着率を上げるには何が必要？"},
+  {id:13, text:"新メンバーが入りやすい空気づくり"},
+  {id:14, text:"「このチャプターらしさ」を言語化する"},
+  {id:15, text:"出席率が高い人の共通点"},
+  {id:16, text:"チャプタートラフィック確認会"},
+  {id:17, text:"今月の拡大目標共有"},
+  {id:18, text:"メンバー同士の接点を増やす方法"},
+  {id:19, text:"「紹介が回るチャプター」の条件とは？"},
+  {id:20, text:"最近良かった1to1共有"},
+  {id:21, text:"1to1シート見直し会"},
+  {id:22, text:"「紹介につながる1to1」とは？"},
+  {id:23, text:"まだ1to1していない人確認"},
+  {id:24, text:"1to1後に紹介が出た成功事例"},
+  {id:25, text:"相手理解が深まった質問共有"},
+  {id:26, text:"1to1後のフォロー方法"},
+  {id:27, text:"「作業化した1to1」を防ぐには？"},
+  {id:28, text:"パワーチーム候補を整理してみる"},
+  {id:29, text:"来週1to1したい人宣言"},
+  {id:30, text:"自分と相性が良い協業カテゴリーとは？"},
+  {id:31, text:"一緒に営業すると強い業種"},
+  {id:32, text:"同じ顧客層を持っている人探し"},
+  {id:33, text:"お客様を横展開できる業種共有"},
+  {id:34, text:"パワーチームでイベントするとしたら？"},
+  {id:35, text:"紹介し合える関係を作るには？"},
+  {id:36, text:"協業すると喜ばれるお客様像"},
+  {id:37, text:"他業種と組めるサービス整理"},
+  {id:38, text:"「この業種ともっと繋がりたい」共有"},
+  {id:39, text:"今後強化したいパワーチーム確認"},
+  {id:40, text:"「実際は何をやってる人？」深掘り"},
+  {id:41, text:"商品説明3分チャレンジ"},
+  {id:42, text:"紹介しやすい一言を作る会"},
+  {id:43, text:"「どんな人を紹介してほしい？」具体化"},
+  {id:44, text:"紹介してほしくないケース共有"},
+  {id:45, text:"他社との違いをわかりやすく説明"},
+  {id:46, text:"お客様が購入を決めるポイント"},
+  {id:47, text:"「この悩みが出たら紹介してほしい」共有"},
+  {id:48, text:"他メンバーに自分の仕事を説明してもらう"},
+  {id:49, text:"今日のプレゼン深掘り会"}
+];
+
+const COOLDOWN = 10;
+let usedIds = new Set();
+let history = [];
+let spinning = false;
+
+/* ── Web Audio BGM ── */
+let audioCtx = null;
+let bgmOn = false;
+let bgmMaster = null;
+let bgmLoopId = null;
+let nextBarTime = 0;
+const BPM = 132, BEAT = 60/BPM, BAR = BEAT*4;
+const SCALE = [261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25,783.99,880.00];
+
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  return audioCtx;
+}
+function note(ctx,dest,freq,t,dur,type,vol){
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(vol,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.connect(g);g.connect(dest);o.start(t);o.stop(t+dur+0.05);
+}
+function scheduleBar(ctx,dest,t0){
+  const mel=[0,2,4,5,7,5,4,2,4,5,7,9,5,7,4,2];
+  mel.forEach((si,i)=>{
+    if(Math.random()>0.12) note(ctx,dest,SCALE[si%SCALE.length],t0+i*BEAT/2,BEAT*0.4,'triangle',0.5);
+  });
+  [0,2].forEach(b=>note(ctx,dest,SCALE[0]/2,t0+b*BEAT,BEAT*0.85,'sine',0.7));
+  [1,3].forEach(b=>[0,2,4].forEach(si=>note(ctx,dest,SCALE[si],t0+b*BEAT,BEAT*0.28,'square',0.16)));
+  for(let i=0;i<8;i++){
+    const ht=t0+i*BEAT/2,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sawtooth';o.frequency.setValueAtTime(180+Math.random()*80,ht);
+    g.gain.setValueAtTime(0,ht);g.gain.linearRampToValueAtTime(i%2===0?0.1:0.04,ht+0.005);
+    g.gain.exponentialRampToValueAtTime(0.001,ht+0.05);
+    o.connect(g);g.connect(dest);o.start(ht);o.stop(ht+0.06);
+  }
+}
+function startBgm(){
+  const ctx=getCtx();
+  if(ctx.state==='suspended') ctx.resume();
+  bgmMaster=ctx.createGain();
+  bgmMaster.gain.setValueAtTime(0.15,ctx.currentTime);
+  bgmMaster.connect(ctx.destination);
+  nextBarTime=ctx.currentTime+0.05;
+  function loop(){
+    while(nextBarTime<getCtx().currentTime+BAR*2){scheduleBar(getCtx(),bgmMaster,nextBarTime);nextBarTime+=BAR;}
+    bgmLoopId=setTimeout(loop,BAR*500);
+  }
+  loop();
+}
+function stopBgm(){
+  clearTimeout(bgmLoopId);
+  if(bgmMaster){const ctx=getCtx();bgmMaster.gain.linearRampToValueAtTime(0,ctx.currentTime+0.4);setTimeout(()=>{bgmMaster=null;},500);}
+}
+function toggleBgm(){
+  bgmOn=!bgmOn;
+  document.getElementById('bgm-btn').classList.toggle('on',bgmOn);
+  document.getElementById('bgm-label').textContent=bgmOn?'BGM ON':'BGM OFF';
+  bgmOn?startBgm():stopBgm();
+}
+function playSpinSound(){
+  const ctx=getCtx();if(ctx.state==='suspended')ctx.resume();
+  const g=ctx.createGain();g.gain.setValueAtTime(0.28,ctx.currentTime);g.connect(ctx.destination);
+  SCALE.forEach((f,i)=>note(ctx,g,f,ctx.currentTime+i*0.065,0.15,'triangle',0.7));
+}
+function playResultSound(){
+  const ctx=getCtx();if(ctx.state==='suspended')ctx.resume();
+  const g=ctx.createGain();g.gain.setValueAtTime(0.32,ctx.currentTime);g.connect(ctx.destination);
+  const t=ctx.currentTime;
+  [523.25,659.25,783.99].forEach((f,i)=>note(ctx,g,f,t+i*0.1,0.22,'triangle',0.75));
+  note(ctx,g,1046.50,t+0.32,0.45,'triangle',0.9);
+  [523.25,659.25,783.99,1046.50].forEach((f,i)=>note(ctx,g,f,t+0.55+i*0.07,0.18,'triangle',0.5));
+}
+
+/* ── ルーレット ── */
+function getAvailable(){const a=TOPICS.filter(t=>!usedIds.has(t.id));return a.length===0?TOPICS:a;}
+function weightedRandom(topics){
+  const recent=history.slice(-COOLDOWN).map(h=>h.id);
+  const w=topics.map(t=>({topic:t,w:recent.includes(t.id)?0.1:1}));
+  const total=w.reduce((s,x)=>s+x.w,0);let r=Math.random()*total;
+  for(const x of w){r-=x.w;if(r<=0)return x.topic;}
+  return w[w.length-1].topic;
+}
+
+function spin(){
+  if(spinning)return;
+  spinning=true;
+  const btn=document.getElementById('spin-btn');
+  btn.disabled=true; btn.textContent='⏳ まわし中...';
+  const inner=document.getElementById('result-inner');
+  inner.className='';
+  inner.innerHTML='<div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+  playSpinSound();
+  const winner=weightedRandom(getAvailable());
+  setTimeout(()=>{
+    usedIds.add(winner.id);
+    history.push({id:winner.id});
+    inner.className='result-text pop';
+    inner.textContent=winner.text;
+    document.getElementById('remain-count').textContent=50-usedIds.size;
+    document.getElementById('used-count').textContent=usedIds.size;
+    renderHistory();
+    playResultSound();
+    spinning=false;
+    btn.disabled=false;
+    btn.innerHTML='🎲 もう一度まわす';
+  },1800+Math.random()*700);
+}
+
+function renderHistory(){
+  const list=document.getElementById('history-list');
+  document.getElementById('history-count').textContent=history.length+'件';
+  if(history.length===0){list.innerHTML='<div class="history-empty">まだありません</div>';return;}
+  list.innerHTML=history.slice().reverse().map(h=>{
+    const t=TOPICS.find(x=>x.id===h.id);
+    return `<div class="history-item">${t.text}</div>`;
+  }).join('');
+}
+
+function resetAll(){
+  if(!confirm('リセットしますか？'))return;
+  usedIds=new Set();history=[];spinning=false;
+  const inner=document.getElementById('result-inner');
+  inner.className='';
+  inner.innerHTML='<span class="result-placeholder">ボタンを押してお題を出す</span>';
+  document.getElementById('spin-btn').innerHTML='🎲 まわす';
+  document.getElementById('remain-count').textContent=50;
+  document.getElementById('used-count').textContent=0;
+  renderHistory();
+}
+</script>
+</body>
+</html>

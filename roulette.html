@@ -68,8 +68,6 @@
 </head>
 <body>
 <div class="overlay" id="overlay"></div>
-
-<!-- ══ SETUP ══ -->
 <div class="screen active" id="setup">
   <div class="setup-header"><h1>🎰 賞品抽選</h1></div>
   <div class="setup-grid">
@@ -114,8 +112,6 @@
     </div>
   </div>
 </div>
-
-<!-- ══ ROULETTE ══ -->
 <div class="screen" id="roulette">
   <button class="back-btn" onclick="goBack()">← 設定に戻る</button>
   <div class="prize-name-lg" id="roulette-prize">—</div>
@@ -125,8 +121,6 @@
   </div>
   <button class="spin-btn" id="spin-btn" onclick="startSpin()">START</button>
 </div>
-
-<!-- ══ WINNER ══ -->
 <div class="screen" id="winner">
   <canvas class="fireworks" id="fireworks"></canvas>
   <div class="winner-content">
@@ -135,611 +129,55 @@
     <div class="winner-congrats">おめでとうございます！</div>
   </div>
 </div>
-
 <script>
-// ══ STATE ══
-let participants = [];
-let currentPrize = '';
-let spinning = false;
-let currentAngle = 0;
-let animFrame, fireworksCtx;
-let fireworksParticles = [];
-let generatedURL = '';
-let showPrizeInput = true;
-let showProb = true;
-let hasUnsavedChanges = false;
-
-const COLORS = ['#7B5FFF','#FF5F9E','#F5C842','#00D4AA','#FF7A1F','#5FC8FF','#B44DFF','#FF4D6A','#1FD870','#FFB347'];
-
-// ══ 音声（Web Audio API）══
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-let audioCtx = null;
-let bgmNodes = null;
-
-function getAudioCtx() {
-  if (!audioCtx) audioCtx = new AudioCtx();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  return audioCtx;
-}
-
-function playNote(ctx, freq, t, dur, vol=0.2, type='sine', slide=null) {
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.015);
-  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  g.connect(ctx.destination);
-  const o = ctx.createOscillator();
-  o.type = type;
-  o.frequency.setValueAtTime(freq, t);
-  if (slide) o.frequency.linearRampToValueAtTime(slide, t + dur);
-  o.connect(g);
-  o.start(t); o.stop(t + dur + 0.05);
-}
-
-// ドラム系
-function kick(ctx, t) {
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-  g.connect(ctx.destination);
-  const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.3);
-  o.connect(g); o.start(t); o.stop(t + 0.5);
-}
-function snare(ctx, t) {
-  const buf = ctx.createBuffer(1, ctx.sampleRate * 0.15, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/d.length, 2);
-  const src = ctx.createBufferSource(); src.buffer = buf;
-  const g = ctx.createGain(); g.gain.setValueAtTime(0.3, t);
-  src.connect(g); g.connect(ctx.destination); src.start(t);
-}
-function hihat(ctx, t, vol=0.08) {
-  const buf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/d.length, 3);
-  const src = ctx.createBufferSource(); src.buffer = buf;
-  const g = ctx.createGain(); g.gain.setValueAtTime(vol, t);
-  const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 8000;
-  src.connect(f); f.connect(g); g.connect(ctx.destination); src.start(t);
-}
-
-// ── じゃーん（ルーレット画面突入）──
-function playReadySound() {
-  try {
-    const ctx = getAudioCtx();
-    const t = ctx.currentTime;
-    // 上昇グリッサンド
-    playNote(ctx, 200, t, 0.25, 0.15, 'sawtooth', 600);
-    // 豪華な和音
-    [[261.63,0.3],[329.63,0.3],[392.00,0.3],[523.25,0.3],[659.25,0.28],[783.99,0.22]].forEach(([f,v],i) => {
-      playNote(ctx, f, t+0.22, 2.0, v*0.7, 'triangle');
-      playNote(ctx, f*2, t+0.22, 1.5, v*0.2, 'sine');
-    });
-    // 低音ドーン
-    kick(ctx, t+0.22); kick(ctx, t+0.28);
-    playNote(ctx, 65.41, t+0.22, 2.0, 0.4, 'sine');
-    // キラキラ
-    [1046.5,1318.5,1567.98,2093].forEach((f,i)=>playNote(ctx,f,t+0.3+i*0.06,0.8,0.06,'sine'));
-  } catch(e) {}
-}
-
-// ── スピン中BGM（お祭りアップテンポ）──
-function startBGM() {
-  stopBGM();
-  const ctx = getAudioCtx();
-  const BPM = 160;
-  const B = 60 / BPM; // 1拍の長さ(秒)
-
-  // メロディー：陽気なお祭りっぽいフレーズ
-  const mel = [
-    [659.25,0.5],[783.99,0.5],[880.00,1],[783.99,0.5],[659.25,0.5],
-    [587.33,0.5],[659.25,0.5],[783.99,1],[880.00,0.5],[987.77,0.5],
-    [1046.50,1],[880.00,0.5],[783.99,0.5],[659.25,0.5],[587.33,0.5],
-    [523.25,1],[587.33,0.5],[659.25,0.5],[783.99,1],[659.25,1],
-  ];
-  // カウンターメロディー
-  const mel2 = [
-    [523.25,1],[392.00,1],[440.00,1],[392.00,1],
-    [349.23,1],[392.00,1],[440.00,2],
-    [523.25,1],[440.00,1],[392.00,1],[349.23,1],
-    [329.63,1],[349.23,1],[392.00,2],
-  ];
-  // ベース
-  const bass = [
-    [130.81,1],[164.81,1],[196.00,1],[164.81,1],
-    [130.81,1],[146.83,1],[164.81,1],[130.81,1],
-  ];
-
-  let tM = ctx.currentTime + 0.05;
-  let tM2 = ctx.currentTime + 0.05;
-  let tB = ctx.currentTime + 0.05;
-  let tD = ctx.currentTime + 0.05;
-
-  const gM = ctx.createGain(); gM.gain.value = 0.13; gM.connect(ctx.destination);
-  const gM2 = ctx.createGain(); gM2.gain.value = 0.07; gM2.connect(ctx.destination);
-  const gB = ctx.createGain(); gB.gain.value = 0.18; gB.connect(ctx.destination);
-
-  function schedMel() {
-    mel.forEach(([f,beats]) => {
-      const dur = beats * B;
-      const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0,tM); g.gain.linearRampToValueAtTime(0.12,tM+0.01); g.gain.exponentialRampToValueAtTime(0.001,tM+dur*0.9);
-      o.connect(g); g.connect(gM); o.start(tM); o.stop(tM+dur);
-      tM += dur;
-    });
-  }
-  function schedMel2() {
-    mel2.forEach(([f,beats]) => {
-      const dur = beats * B;
-      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0,tM2); g.gain.linearRampToValueAtTime(0.08,tM2+0.01); g.gain.exponentialRampToValueAtTime(0.001,tM2+dur*0.85);
-      o.connect(g); g.connect(gM2); o.start(tM2); o.stop(tM2+dur);
-      tM2 += dur;
-    });
-  }
-  function schedBass() {
-    bass.forEach(([f,beats]) => {
-      const dur = beats * B;
-      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.18,tB); g.gain.exponentialRampToValueAtTime(0.001,tB+dur*0.8);
-      o.connect(g); g.connect(gB); o.start(tB); o.stop(tB+dur);
-      tB += dur;
-    });
-  }
-  function schedDrums(measures=4) {
-    for (let m=0; m<measures; m++) {
-      for (let beat=0; beat<4; beat++) {
-        const t = tD + (m*4+beat)*B;
-        kick(ctx, t); // 全拍キック
-        if (beat % 2 === 1) snare(ctx, t); // 2,4拍スネア
-        // 8分ハイハット
-        hihat(ctx, t, 0.06);
-        hihat(ctx, t + B/2, 0.04);
-      }
-    }
-    tD += measures * 4 * B;
-  }
-
-  schedMel(); schedMel2(); schedBass(); schedDrums(4);
-
-  const melLen = mel.reduce((s,[,b])=>s+b,0)*B*1000;
-  const mel2Len = mel2.reduce((s,[,b])=>s+b,0)*B*1000;
-  const bassLen = bass.reduce((s,[,b])=>s+b,0)*B*1000;
-  const drumLen = 4*4*B*1000;
-
-  const iM  = setInterval(()=>{ if(!spinning){clearInterval(iM);return;}  schedMel(); },  melLen);
-  const iM2 = setInterval(()=>{ if(!spinning){clearInterval(iM2);return;} schedMel2(); }, mel2Len);
-  const iB  = setInterval(()=>{ if(!spinning){clearInterval(iB);return;}  schedBass(); }, bassLen);
-  const iD  = setInterval(()=>{ if(!spinning){clearInterval(iD);return;}  schedDrums(4); }, drumLen);
-
-  bgmNodes = { gM, gM2, gB, iM, iM2, iB, iD };
-}
-
-function stopBGM() {
-  if (!bgmNodes) return;
-  [bgmNodes.iM, bgmNodes.iM2, bgmNodes.iB, bgmNodes.iD].forEach(i=>clearInterval(i));
-  try {
-    const t = audioCtx.currentTime;
-    bgmNodes.gM.gain.linearRampToValueAtTime(0,t+0.3);
-    bgmNodes.gM2.gain.linearRampToValueAtTime(0,t+0.3);
-    bgmNodes.gB.gain.linearRampToValueAtTime(0,t+0.3);
-  } catch(e) {}
-  bgmNodes = null;
-}
-
-// ── ぱっぱかぱーーーーん！（当選発表・超派手版）──
-function playWinSound() {
-  try {
-    const ctx = getAudioCtx();
-    const t = ctx.currentTime;
-
-    // ── ぱっぱかぱっぱか（高速上昇フレーズ）──
-    const run = [
-      [392.00, 0.00, 0.09],
-      [493.88, 0.09, 0.09],
-      [587.33, 0.18, 0.07],
-      [659.25, 0.25, 0.09],
-      [783.99, 0.34, 0.07],
-      [880.00, 0.41, 0.09],
-      [987.77, 0.50, 0.07],
-      [1046.50,0.57, 0.07],
-    ];
-    run.forEach(([f, dt, dur], i) => {
-      playNote(ctx, f, t+dt, dur, 0.30, 'square');
-      if (i % 2 === 0) kick(ctx, t+dt);
-      else hihat(ctx, t+dt, 0.18);
-      if (i % 3 === 0) snare(ctx, t+dt);
-    });
-
-    // ── ぱーーーーん！（ど派手着地）──
-    const land = t + 0.68;
-    // キックを連打
-    kick(ctx, land); kick(ctx, land+0.07); kick(ctx, land+0.14);
-    snare(ctx, land); snare(ctx, land+0.07);
-
-    // 豪華な全音域和音
-    [
-      [65.41, 0.50, 'sine'],
-      [130.81, 0.45, 'sine'],
-      [261.63, 0.38, 'triangle'],
-      [392.00, 0.32, 'triangle'],
-      [523.25, 0.28, 'triangle'],
-      [659.25, 0.24, 'triangle'],
-      [783.99, 0.20, 'square'],
-      [1046.50,0.18, 'square'],
-      [1318.51,0.14, 'sine'],
-      [1567.98,0.10, 'sine'],
-    ].forEach(([f, v, type]) => {
-      playNote(ctx, f, land, 3.5, v, type);
-    });
-
-    // ── キラキラ上昇アルペジオ ──
-    [523.25,659.25,783.99,1046.5,1318.5,1567.98,2093,2637,3136].forEach((f,i) => {
-      playNote(ctx, f, land+0.05+i*0.06, 1.2, 0.12, 'sine');
-    });
-
-    // ── 余韻ドラムロール ──
-    for (let i = 0; i < 6; i++) {
-      hihat(ctx, land+0.3+i*0.12, 0.10);
-    }
-    snare(ctx, land+1.0);
-    kick(ctx, land+1.2);
-    snare(ctx, land+1.4);
-    kick(ctx, land+1.6); kick(ctx, land+1.7);
-    snare(ctx, land+1.8);
-
-    // ── 最後にもう一発ジャーン ──
-    [523.25,659.25,783.99,1046.5,1318.5].forEach(([f,v]=[...arguments]) => {
-      // ↑ こっちは単純に
-    });
-    playNote(ctx, 523.25, land+2.0, 1.5, 0.22, 'triangle');
-    playNote(ctx, 659.25, land+2.0, 1.5, 0.18, 'triangle');
-    playNote(ctx, 783.99, land+2.0, 1.5, 0.14, 'triangle');
-    kick(ctx, land+2.0); snare(ctx, land+2.0);
-
-  } catch(e) {}
-}
-
-// ══ 未保存管理 ══
-function markUnsaved() {
-  hasUnsavedChanges = true;
-  const btn = document.getElementById('btn-save');
-  btn.disabled = false;
-  btn.classList.add('unsaved');
-  btn.textContent = '💾 保存（未保存）';
-}
-function markSaved() {
-  hasUnsavedChanges = false;
-  const btn = document.getElementById('btn-save');
-  btn.classList.remove('unsaved');
-  btn.textContent = '💾 保存済み';
-  setTimeout(() => { btn.textContent = '💾 保存'; btn.disabled = true; }, 1500);
-}
-
-// ══ トグル ══
-function togglePrize() {
-  showPrizeInput = !showPrizeInput; applyPrizeToggle(); markUnsaved();
-}
-function applyPrizeToggle() {
-  document.getElementById('prize-input-wrap').style.display = showPrizeInput ? '' : 'none';
-  const btn = document.getElementById('btn-prize-toggle');
-  btn.textContent = showPrizeInput ? '入力欄を非表示' : '入力欄を表示';
-  btn.style.background = showPrizeInput ? 'rgba(245,200,66,0.15)' : 'rgba(255,255,255,0.06)';
-  btn.style.color = showPrizeInput ? 'var(--gold)' : 'var(--muted)';
-  btn.style.borderColor = showPrizeInput ? 'rgba(245,200,66,0.4)' : 'rgba(255,255,255,0.15)';
-}
-function toggleProb() {
-  showProb = !showProb; applyProbToggle(); renderParticipants(); markUnsaved();
-}
-function applyProbToggle() {
-  const btn = document.getElementById('btn-prob-toggle');
-  btn.textContent = showProb ? '確率を非表示' : '確率を表示';
-  btn.style.background = showProb ? 'rgba(123,95,255,0.15)' : 'rgba(255,255,255,0.06)';
-  btn.style.color = showProb ? 'var(--accent)' : 'var(--muted)';
-  btn.style.borderColor = showProb ? 'rgba(123,95,255,0.4)' : 'rgba(255,255,255,0.15)';
-  const header = document.getElementById('prob-col-header');
-  header.style.gridTemplateColumns = showProb ? '1fr 90px 36px' : '1fr 36px';
-  document.getElementById('prob-col-label').style.display = showProb ? '' : 'none';
-  document.getElementById('prob-total').style.display = showProb ? '' : 'none';
-}
-function toggleSharePanel() {
-  const panel = document.getElementById('share-panel');
-  const visible = panel.style.display === 'none';
-  panel.style.display = visible ? 'flex' : 'none';
-  const btn = document.getElementById('btn-share-toggle');
-  btn.textContent = visible ? '🔗 共有URLを非表示' : '🔗 共有URLを表示';
-  btn.style.color = visible ? 'var(--gold)' : 'var(--muted)';
-  btn.style.borderColor = visible ? 'rgba(245,200,66,0.4)' : 'rgba(255,255,255,0.15)';
-  btn.style.background = visible ? 'rgba(245,200,66,0.1)' : 'rgba(255,255,255,0.06)';
-}
-
-// ══ 賞品 ══
-function onPrizeInput(val) {
-  currentPrize = val.trim();
-  document.getElementById('prize-display').textContent = currentPrize || '—';
-  validateForm(); markUnsaved();
-}
-
-// ══ 参加者 ══
-function addParticipant(name='', prob='') {
-  participants.push({ id: Date.now() + Math.random(), name, prob });
-  renderParticipants(); markUnsaved();
-}
-function removeParticipant(id) {
-  participants = participants.filter(p => p.id !== id);
-  renderParticipants(); markUnsaved();
-}
-function updateParticipant(el) {
-  const p = participants.find(p => p.id === parseFloat(el.dataset.id));
-  if (!p) return;
-  p[el.dataset.field] = el.value;
-  if (el.dataset.field === 'prob') updateProbTotal();
-  validateForm(); markUnsaved();
-}
-function renderParticipants() {
-  const cols = showProb ? '1fr 90px 36px' : '1fr 36px';
-  document.getElementById('participants-list').innerHTML = participants.map(p => `
-    <div class="participant-row" style="grid-template-columns:${cols}">
-      <input type="text" placeholder="名前" value="${p.name}" data-id="${p.id}" data-field="name" oninput="updateParticipant(this)" />
-      ${showProb ? `<input type="number" placeholder="%" value="${p.prob}" min="0" max="100" step="0.1" data-id="${p.id}" data-field="prob" oninput="updateParticipant(this)" style="text-align:center;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px;color:var(--text);font-family:inherit;font-size:14px;outline:none;" />` : ''}
-      <button class="del-btn" onclick="removeParticipant(${p.id})">×</button>
-    </div>
-  `).join('');
-  updateProbTotal(); validateForm();
-}
-function updateProbTotal() {
-  const total = participants.reduce((s,p) => s+(parseFloat(p.prob)||0), 0);
-  const el = document.getElementById('prob-total');
-  el.textContent = `合計: ${Math.round(total*10)/10}%`;
-  el.className = 'prob-total' + (Math.abs(total-100) > 0.5 ? ' warn' : '');
-}
-function validateForm() {
-  const total = participants.reduce((s,p) => s+(parseFloat(p.prob)||0), 0);
-  const totalOk = !showProb || Math.abs(total-100) <= 0.5;
-  const valid = currentPrize.length > 0
-    && participants.length >= 2
-    && participants.every(p => p.name.trim() && parseFloat(p.prob) > 0)
-    && totalOk;
-  document.getElementById('go-btn').disabled = !valid;
-}
-
-// ══ 保存・読込 ══
-function buildData() { return { prize: currentPrize, participants, showPrizeInput, showProb }; }
-
-function saveData() {
-  try { localStorage.setItem('roulette_v2', JSON.stringify(buildData())); markSaved(); } catch(e) {}
-}
-
-function applyData(data) {
-  currentPrize = data.prize || '';
-  document.getElementById('prize-input').value = currentPrize;
-  document.getElementById('prize-display').textContent = currentPrize || '—';
-  participants = (data.participants || []).map(p => ({ ...p, id: Date.now() + Math.random() }));
-  showPrizeInput = data.showPrizeInput !== false;
-  showProb = data.showProb !== false;
-  applyPrizeToggle(); applyProbToggle(); renderParticipants(); validateForm();
-}
-
-function loadData() {
-  try {
-    const raw = new URLSearchParams(location.search).get('data');
-    if (raw) { applyData(JSON.parse(decodeURIComponent(raw))); return; }
-    const saved = localStorage.getItem('roulette_v2');
-    if (saved) { applyData(JSON.parse(saved)); return; }
-  } catch(e) {}
-  addParticipant('田中 一郎', '40');
-  addParticipant('鈴木 花子', '35');
-  addParticipant('佐藤 次郎', '25');
-  document.getElementById('prize-input').value = 'Amazonギフト券 5,000円';
-  onPrizeInput('Amazonギフト券 5,000円');
-  markUnsaved();
-}
-
-function resetData() {
-  if (!confirm('保存データをリセットしますか？')) return;
-  localStorage.removeItem('roulette_v2');
-  participants = []; currentPrize = ''; showPrizeInput = true; showProb = true;
-  document.getElementById('prize-input').value = '';
-  document.getElementById('prize-display').textContent = '—';
-  applyPrizeToggle(); applyProbToggle(); renderParticipants(); validateForm();
-  hasUnsavedChanges = false;
-  const btn = document.getElementById('btn-save');
-  btn.disabled = true; btn.classList.remove('unsaved'); btn.textContent = '💾 保存';
-}
-
-// ══ 共有URL ══
-function generateShareURL() {
-  generatedURL = location.href.split('?')[0] + '?data=' + encodeURIComponent(JSON.stringify(buildData()));
-  document.getElementById('url-box').textContent = generatedURL;
-  document.getElementById('url-box').style.display = 'block';
-  document.getElementById('btn-copy').style.display = 'block';
-}
-function copyShareURL() {
-  if (!generatedURL) return;
-  navigator.clipboard.writeText(generatedURL).then(() => {
-    const btn = document.getElementById('btn-copy');
-    btn.textContent = '✅ コピーしました！'; btn.style.color = '#00D4AA';
-    setTimeout(() => { btn.textContent = '📋 URLをコピー'; btn.style.color = 'var(--accent)'; }, 2500);
-  });
-}
-
-// ══ 画面遷移 ══
-function setScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
-function fadeTransition(cb) { const ov = document.getElementById('overlay'); ov.classList.add('fade-in'); setTimeout(() => { cb(); ov.classList.remove('fade-in'); }, 400); }
-
-function goToRoulette() {
-  document.getElementById('roulette-prize').textContent = currentPrize;
-  document.getElementById('spin-btn').disabled = false;
-  document.getElementById('spin-btn').textContent = 'START';
-  spinning = false; currentAngle = 0;
-  fadeTransition(() => { setScreen('roulette'); drawWheel(0); playReadySound(); });
-}
-function goBack() {
-  stopBGM();
-  cancelAnimationFrame(animFrame); spinning = false; currentAngle = 0;
-  document.getElementById('spin-btn').disabled = false;
-  document.getElementById('spin-btn').textContent = 'START';
-  fadeTransition(() => setScreen('setup'));
-}
-
-// ══ ホイール描画（均等分割）══
-function getValid() {
-  return participants.filter(p => p.name.trim() && parseFloat(p.prob) > 0)
-    .map(p => ({ name: p.name.trim(), prob: parseFloat(p.prob) }));
-}
-
-function drawWheel(angle) {
-  const canvas = document.getElementById('wheel');
-  const ctx = canvas.getContext('2d');
-  const cx = canvas.width/2, cy = canvas.height/2, r = canvas.width/2 - 4;
-  const parts = getValid();
-  const n = parts.length;
-  if (n === 0) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // ★ 均等分割：確率に関係なく全スライスを同じ角度で描画
-  const sweep = (Math.PI * 2) / n;
-  let start = angle - Math.PI / 2;
-
-  parts.forEach((p, i) => {
-    const mid = start + sweep / 2;
-
-    // スライス
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, start + sweep); ctx.closePath();
-    ctx.fillStyle = COLORS[i % COLORS.length]; ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 2; ctx.stroke();
-
-    // 名前テキスト
-    const sliceDeg = sweep * 180 / Math.PI;
-    const fontSize = Math.max(9, Math.min(15, sliceDeg * 0.5));
-    ctx.save();
-    ctx.translate(cx + Math.cos(mid) * r * 0.62, cy + Math.sin(mid) * r * 0.62);
-    ctx.rotate(mid + Math.PI / 2);
-    ctx.fillStyle = '#fff';
-    ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 3;
-    const name = p.name;
-    if (name.length <= 5 || sliceDeg >= 60) {
-      ctx.fillText(name, 0, fontSize * 0.4);
-    } else {
-      const half = Math.ceil(name.length / 2);
-      ctx.fillText(name.slice(0, half), 0, -fontSize * 0.3);
-      ctx.fillText(name.slice(half), 0, fontSize * 0.9);
-    }
-    ctx.restore();
-    start += sweep;
-  });
-
-  // 中心円
-  ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI*2); ctx.fillStyle = '#0A0A1A'; ctx.fill();
-  ctx.strokeStyle = 'rgba(245,200,66,0.6)'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = '#F5C842'; ctx.font = `bold 14px 'Noto Sans JP', sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('GO', cx, cy);
-}
-
-// ══ ポインターが指すスライスを読み取る（均等分割版）══
-function getSliceAtPointer(angle) {
-  const parts = getValid();
-  const n = parts.length;
-  if (n === 0) return null;
-  const sweep = (Math.PI * 2) / n;
-  // ポインターが指す位置 = -angle を 0〜2PI に正規化
-  let pointer = ((-angle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-  const index = Math.floor(pointer / sweep) % n;
-  return parts[index];
-}
-
-// ══ スピン ══
-function startSpin() {
-  if (spinning) return;
-  spinning = true;
-  document.getElementById('spin-btn').disabled = true;
-  document.getElementById('spin-btn').textContent = '…';
-
-  // BGM開始
-  startBGM();
-
-  const parts = getValid();
-  const n = parts.length;
-  const sweep = (Math.PI * 2) / n;
-
-  // 確率に基づいて当選インデックスを決める
-  const total = parts.reduce((s,p) => s + p.prob, 0);
-  let r = Math.random() * total, winnerIndex = n - 1;
-  for (let i = 0; i < n; i++) {
-    r -= parts[i].prob;
-    if (r <= 0) { winnerIndex = i; break; }
-  }
-
-  // 当選スライスの中心角度（均等分割）
-  const sliceCenter = winnerIndex * sweep + sweep / 2;
-  const extraSpins = Math.PI * 2 * (8 + Math.random() * 4);
-  const targetAngle = -sliceCenter + extraSpins;
-
-  animateSpin(currentAngle, targetAngle, 10000);
-}
-
-function animateSpin(from, to, dur) {
-  const t0 = performance.now();
-  function ease(t) { return 1 - Math.pow(1 - t, 4); }
-  function frame(now) {
-    const t = Math.min((now - t0) / dur, 1);
-    currentAngle = from + (to - from) * ease(t);
-    drawWheel(currentAngle);
-    if (t < 1) {
-      animFrame = requestAnimationFrame(frame);
-    } else {
-      currentAngle = to;
-      spinning = false;
-      stopBGM();
-      // 見た目通りのスライスを読み取る
-      const actual = getSliceAtPointer(currentAngle);
-      setTimeout(() => showWinner(actual), 400);
-    }
-  }
-  animFrame = requestAnimationFrame(frame);
-}
-
-function showWinner(winner) {
-  document.getElementById('winner-name').textContent = winner ? winner.name : '—';
-  playWinSound();
-  fadeTransition(() => { setScreen('winner'); startFireworks(); });
-}
-
-// ══ 花火 ══
-function startFireworks() {
-  const c = document.getElementById('fireworks');
-  c.width = innerWidth; c.height = innerHeight;
-  fireworksCtx = c.getContext('2d'); fireworksParticles = [];
-  launchFirework(); launchFirework(); requestAnimationFrame(animFW);
-}
-function launchFirework() {
-  const x = Math.random()*innerWidth, y = Math.random()*innerHeight*0.6;
-  const clrs = ['#F5C842','#7B5FFF','#FF5F9E','#00D4AA','#FF7A1F','#fff'];
-  const color = clrs[Math.floor(Math.random()*clrs.length)];
-  for (let i=0; i<60; i++) {
-    const a=Math.PI*2*i/60, s=2+Math.random()*5;
-    fireworksParticles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,alpha:1,color,size:2+Math.random()*3,life:80+Math.random()*60});
-  }
-}
-function animFW() {
-  if (!document.getElementById('winner').classList.contains('active')) return;
-  fireworksCtx.clearRect(0,0,fireworksCtx.canvas.width,fireworksCtx.canvas.height);
-  fireworksParticles = fireworksParticles.filter(p=>p.alpha>0.01);
-  fireworksParticles.forEach(p => {
-    p.x+=p.vx; p.y+=p.vy; p.vy+=0.08; p.vx*=0.98; p.alpha-=1/p.life;
-    fireworksCtx.beginPath(); fireworksCtx.arc(p.x,p.y,p.size,0,Math.PI*2);
-    fireworksCtx.fillStyle=p.color; fireworksCtx.globalAlpha=p.alpha; fireworksCtx.fill(); fireworksCtx.globalAlpha=1;
-  });
-  if (Math.random()<0.04) launchFirework();
-  requestAnimationFrame(animFW);
-}
-
+let participants=[], currentPrize='', spinning=false, currentAngle=0;
+let animFrame, fireworksCtx, fireworksParticles=[], generatedURL='';
+let showPrizeInput=true, showProb=true, hasUnsavedChanges=false;
+const COLORS=['#7B5FFF','#FF5F9E','#F5C842','#00D4AA','#FF7A1F','#5FC8FF','#B44DFF','#FF4D6A','#1FD870','#FFB347'];
+const AudioCtx=window.AudioContext||window.webkitAudioContext;
+let audioCtx=null, bgmNodes=null;
+function getAudioCtx(){if(!audioCtx)audioCtx=new AudioCtx();if(audioCtx.state==='suspended')audioCtx.resume();return audioCtx;}
+function playNote(ctx,freq,t,dur,vol=0.2,type='sine',slide=null){const g=ctx.createGain();g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+0.015);g.gain.exponentialRampToValueAtTime(0.001,t+dur);g.connect(ctx.destination);const o=ctx.createOscillator();o.type=type;o.frequency.setValueAtTime(freq,t);if(slide)o.frequency.linearRampToValueAtTime(slide,t+dur);o.connect(g);o.start(t);o.stop(t+dur+0.05);}
+function kick(ctx,t){const g=ctx.createGain();g.gain.setValueAtTime(0.6,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.4);g.connect(ctx.destination);const o=ctx.createOscillator();o.type='sine';o.frequency.setValueAtTime(180,t);o.frequency.exponentialRampToValueAtTime(40,t+0.3);o.connect(g);o.start(t);o.stop(t+0.5);}
+function snare(ctx,t){const buf=ctx.createBuffer(1,ctx.sampleRate*0.15,ctx.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);const src=ctx.createBufferSource();src.buffer=buf;const g=ctx.createGain();g.gain.setValueAtTime(0.3,t);src.connect(g);g.connect(ctx.destination);src.start(t);}
+function hihat(ctx,t,vol=0.08){const buf=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,3);const src=ctx.createBufferSource();src.buffer=buf;const g=ctx.createGain();g.gain.setValueAtTime(vol,t);const f=ctx.createBiquadFilter();f.type='highpass';f.frequency.value=8000;src.connect(f);f.connect(g);g.connect(ctx.destination);src.start(t);}
+function playReadySound(){try{const ctx=getAudioCtx();const t=ctx.currentTime;playNote(ctx,200,t,0.25,0.15,'sawtooth',600);[[261.63,0.3],[329.63,0.3],[392.00,0.3],[523.25,0.3],[659.25,0.28],[783.99,0.22]].forEach(([f,v])=>{playNote(ctx,f,t+0.22,2.0,v*0.7,'triangle');playNote(ctx,f*2,t+0.22,1.5,v*0.2,'sine');});kick(ctx,t+0.22);kick(ctx,t+0.28);playNote(ctx,65.41,t+0.22,2.0,0.4,'sine');[1046.5,1318.5,1567.98,2093].forEach((f,i)=>playNote(ctx,f,t+0.3+i*0.06,0.8,0.06,'sine'));}catch(e){}}
+function startBGM(){stopBGM();const ctx=getAudioCtx();const BPM=160,B=60/BPM;const mel=[[659.25,0.5],[783.99,0.5],[880.00,1],[783.99,0.5],[659.25,0.5],[587.33,0.5],[659.25,0.5],[783.99,1],[880.00,0.5],[987.77,0.5],[1046.50,1],[880.00,0.5],[783.99,0.5],[659.25,0.5],[587.33,0.5],[523.25,1],[587.33,0.5],[659.25,0.5],[783.99,1],[659.25,1]];const mel2=[[523.25,1],[392.00,1],[440.00,1],[392.00,1],[349.23,1],[392.00,1],[440.00,2],[523.25,1],[440.00,1],[392.00,1],[349.23,1],[329.63,1],[349.23,1],[392.00,2]];const bass=[[130.81,1],[164.81,1],[196.00,1],[164.81,1],[130.81,1],[146.83,1],[164.81,1],[130.81,1]];let tM=ctx.currentTime+0.05,tM2=ctx.currentTime+0.05,tB=ctx.currentTime+0.05,tD=ctx.currentTime+0.05;const gM=ctx.createGain();gM.gain.value=0.13;gM.connect(ctx.destination);const gM2=ctx.createGain();gM2.gain.value=0.07;gM2.connect(ctx.destination);const gB=ctx.createGain();gB.gain.value=0.18;gB.connect(ctx.destination);function schedMel(){mel.forEach(([f,beats])=>{const dur=beats*B;const o=ctx.createOscillator();o.type='square';o.frequency.value=f;const g=ctx.createGain();g.gain.setValueAtTime(0,tM);g.gain.linearRampToValueAtTime(0.12,tM+0.01);g.gain.exponentialRampToValueAtTime(0.001,tM+dur*0.9);o.connect(g);g.connect(gM);o.start(tM);o.stop(tM+dur);tM+=dur;});}function schedMel2(){mel2.forEach(([f,beats])=>{const dur=beats*B;const o=ctx.createOscillator();o.type='triangle';o.frequency.value=f;const g=ctx.createGain();g.gain.setValueAtTime(0,tM2);g.gain.linearRampToValueAtTime(0.08,tM2+0.01);g.gain.exponentialRampToValueAtTime(0.001,tM2+dur*0.85);o.connect(g);g.connect(gM2);o.start(tM2);o.stop(tM2+dur);tM2+=dur;});}function schedBass(){bass.forEach(([f,beats])=>{const dur=beats*B;const o=ctx.createOscillator();o.type='triangle';o.frequency.value=f;const g=ctx.createGain();g.gain.setValueAtTime(0.18,tB);g.gain.exponentialRampToValueAtTime(0.001,tB+dur*0.8);o.connect(g);g.connect(gB);o.start(tB);o.stop(tB+dur);tB+=dur;});}function schedDrums(measures=4){for(let m=0;m<measures;m++){for(let beat=0;beat<4;beat++){const t=tD+(m*4+beat)*B;kick(ctx,t);if(beat%2===1)snare(ctx,t);hihat(ctx,t,0.06);hihat(ctx,t+B/2,0.04);}}tD+=measures*4*B;}schedMel();schedMel2();schedBass();schedDrums(4);const melLen=mel.reduce((s,[,b])=>s+b,0)*B*1000;const mel2Len=mel2.reduce((s,[,b])=>s+b,0)*B*1000;const bassLen=bass.reduce((s,[,b])=>s+b,0)*B*1000;const drumLen=4*4*B*1000;const iM=setInterval(()=>{if(!spinning){clearInterval(iM);return;}schedMel();},melLen);const iM2=setInterval(()=>{if(!spinning){clearInterval(iM2);return;}schedMel2();},mel2Len);const iB=setInterval(()=>{if(!spinning){clearInterval(iB);return;}schedBass();},bassLen);const iD=setInterval(()=>{if(!spinning){clearInterval(iD);return;}schedDrums(4);},drumLen);bgmNodes={gM,gM2,gB,iM,iM2,iB,iD};}
+function stopBGM(){if(!bgmNodes)return;[bgmNodes.iM,bgmNodes.iM2,bgmNodes.iB,bgmNodes.iD].forEach(i=>clearInterval(i));try{const t=audioCtx.currentTime;bgmNodes.gM.gain.linearRampToValueAtTime(0,t+0.3);bgmNodes.gM2.gain.linearRampToValueAtTime(0,t+0.3);bgmNodes.gB.gain.linearRampToValueAtTime(0,t+0.3);}catch(e){}bgmNodes=null;}
+function playWinSound(){try{const ctx=getAudioCtx();const t=ctx.currentTime;const run=[[392.00,0.00,0.09],[493.88,0.09,0.09],[587.33,0.18,0.07],[659.25,0.25,0.09],[783.99,0.34,0.07],[880.00,0.41,0.09],[987.77,0.50,0.07],[1046.50,0.57,0.07]];run.forEach(([f,dt,dur],i)=>{playNote(ctx,f,t+dt,dur,0.30,'square');if(i%2===0)kick(ctx,t+dt);else hihat(ctx,t+dt,0.18);if(i%3===0)snare(ctx,t+dt);});const land=t+0.68;kick(ctx,land);kick(ctx,land+0.07);kick(ctx,land+0.14);snare(ctx,land);snare(ctx,land+0.07);[[65.41,0.50,'sine'],[130.81,0.45,'sine'],[261.63,0.38,'triangle'],[392.00,0.32,'triangle'],[523.25,0.28,'triangle'],[659.25,0.24,'triangle'],[783.99,0.20,'square'],[1046.50,0.18,'square'],[1318.51,0.14,'sine'],[1567.98,0.10,'sine']].forEach(([f,v,type])=>playNote(ctx,f,land,3.5,v,type));[523.25,659.25,783.99,1046.5,1318.5,1567.98,2093,2637,3136].forEach((f,i)=>playNote(ctx,f,land+0.05+i*0.06,1.2,0.12,'sine'));for(let i=0;i<6;i++)hihat(ctx,land+0.3+i*0.12,0.10);snare(ctx,land+1.0);kick(ctx,land+1.2);snare(ctx,land+1.4);kick(ctx,land+1.6);kick(ctx,land+1.7);snare(ctx,land+1.8);playNote(ctx,523.25,land+2.0,1.5,0.22,'triangle');playNote(ctx,659.25,land+2.0,1.5,0.18,'triangle');playNote(ctx,783.99,land+2.0,1.5,0.14,'triangle');kick(ctx,land+2.0);snare(ctx,land+2.0);}catch(e){}}
+function markUnsaved(){hasUnsavedChanges=true;const btn=document.getElementById('btn-save');btn.disabled=false;btn.classList.add('unsaved');btn.textContent='💾 保存（未保存）';}
+function markSaved(){hasUnsavedChanges=false;const btn=document.getElementById('btn-save');btn.classList.remove('unsaved');btn.textContent='💾 保存済み';setTimeout(()=>{btn.textContent='💾 保存';btn.disabled=true;},1500);}
+function togglePrize(){showPrizeInput=!showPrizeInput;applyPrizeToggle();markUnsaved();}
+function applyPrizeToggle(){document.getElementById('prize-input-wrap').style.display=showPrizeInput?'':'none';const btn=document.getElementById('btn-prize-toggle');btn.textContent=showPrizeInput?'入力欄を非表示':'入力欄を表示';btn.style.background=showPrizeInput?'rgba(245,200,66,0.15)':'rgba(255,255,255,0.06)';btn.style.color=showPrizeInput?'var(--gold)':'var(--muted)';btn.style.borderColor=showPrizeInput?'rgba(245,200,66,0.4)':'rgba(255,255,255,0.15)';}
+function toggleProb(){showProb=!showProb;applyProbToggle();renderParticipants();markUnsaved();}
+function applyProbToggle(){const btn=document.getElementById('btn-prob-toggle');btn.textContent=showProb?'確率を非表示':'確率を表示';btn.style.background=showProb?'rgba(123,95,255,0.15)':'rgba(255,255,255,0.06)';btn.style.color=showProb?'var(--accent)':'var(--muted)';btn.style.borderColor=showProb?'rgba(123,95,255,0.4)':'rgba(255,255,255,0.15)';const header=document.getElementById('prob-col-header');header.style.gridTemplateColumns=showProb?'1fr 90px 36px':'1fr 36px';document.getElementById('prob-col-label').style.display=showProb?'':'none';document.getElementById('prob-total').style.display=showProb?'':'none';}
+function toggleSharePanel(){const panel=document.getElementById('share-panel');const visible=panel.style.display==='none';panel.style.display=visible?'flex':'none';const btn=document.getElementById('btn-share-toggle');btn.textContent=visible?'🔗 共有URLを非表示':'🔗 共有URLを表示';btn.style.color=visible?'var(--gold)':'var(--muted)';btn.style.borderColor=visible?'rgba(245,200,66,0.4)':'rgba(255,255,255,0.15)';btn.style.background=visible?'rgba(245,200,66,0.1)':'rgba(255,255,255,0.06)';}
+function onPrizeInput(val){currentPrize=val.trim();document.getElementById('prize-display').textContent=currentPrize||'—';validateForm();markUnsaved();}
+function addParticipant(name='',prob=''){participants.push({id:Date.now()+Math.random(),name,prob});renderParticipants();markUnsaved();}
+function removeParticipant(id){participants=participants.filter(p=>p.id!==id);renderParticipants();markUnsaved();}
+function updateParticipant(el){const p=participants.find(p=>p.id===parseFloat(el.dataset.id));if(!p)return;p[el.dataset.field]=el.value;if(el.dataset.field==='prob')updateProbTotal();validateForm();markUnsaved();}
+function renderParticipants(){const cols=showProb?'1fr 90px 36px':'1fr 36px';document.getElementById('participants-list').innerHTML=participants.map(p=>`<div class="participant-row" style="grid-template-columns:${cols}"><input type="text" placeholder="名前" value="${p.name}" data-id="${p.id}" data-field="name" oninput="updateParticipant(this)" />${showProb?`<input type="number" placeholder="%" value="${p.prob}" min="0" max="100" step="0.1" data-id="${p.id}" data-field="prob" oninput="updateParticipant(this)" style="text-align:center;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px;color:var(--text);font-family:inherit;font-size:14px;outline:none;" />`:''}<button class="del-btn" onclick="removeParticipant(${p.id})">×</button></div>`).join('');updateProbTotal();validateForm();}
+function updateProbTotal(){const total=participants.reduce((s,p)=>s+(parseFloat(p.prob)||0),0);const el=document.getElementById('prob-total');el.textContent=`合計: ${Math.round(total*10)/10}%`;el.className='prob-total'+(Math.abs(total-100)>0.5?' warn':'');}
+function validateForm(){const total=participants.reduce((s,p)=>s+(parseFloat(p.prob)||0),0);const totalOk=!showProb||Math.abs(total-100)<=0.5;const valid=currentPrize.length>0&&participants.length>=2&&participants.every(p=>p.name.trim()&&parseFloat(p.prob)>0)&&totalOk;document.getElementById('go-btn').disabled=!valid;}
+function buildData(){return{prize:currentPrize,participants,showPrizeInput,showProb};}
+function saveData(){try{localStorage.setItem('roulette_v2',JSON.stringify(buildData()));markSaved();}catch(e){}}
+function applyData(data){currentPrize=data.prize||'';document.getElementById('prize-input').value=currentPrize;document.getElementById('prize-display').textContent=currentPrize||'—';participants=(data.participants||[]).map(p=>({...p,id:Date.now()+Math.random()}));showPrizeInput=data.showPrizeInput!==false;showProb=data.showProb!==false;applyPrizeToggle();applyProbToggle();renderParticipants();validateForm();}
+function loadData(){try{const raw=new URLSearchParams(location.search).get('data');if(raw){applyData(JSON.parse(decodeURIComponent(raw)));return;}const saved=localStorage.getItem('roulette_v2');if(saved){applyData(JSON.parse(saved));return;}}catch(e){}addParticipant('田中 一郎','40');addParticipant('鈴木 花子','35');addParticipant('佐藤 次郎','25');document.getElementById('prize-input').value='Amazonギフト券 5,000円';onPrizeInput('Amazonギフト券 5,000円');markUnsaved();}
+function resetData(){if(!confirm('保存データをリセットしますか？'))return;localStorage.removeItem('roulette_v2');participants=[];currentPrize='';showPrizeInput=true;showProb=true;document.getElementById('prize-input').value='';document.getElementById('prize-display').textContent='—';applyPrizeToggle();applyProbToggle();renderParticipants();validateForm();hasUnsavedChanges=false;const btn=document.getElementById('btn-save');btn.disabled=true;btn.classList.remove('unsaved');btn.textContent='💾 保存';}
+function generateShareURL(){generatedURL=location.href.split('?')[0]+'?data='+encodeURIComponent(JSON.stringify(buildData()));document.getElementById('url-box').textContent=generatedURL;document.getElementById('url-box').style.display='block';document.getElementById('btn-copy').style.display='block';}
+function copyShareURL(){if(!generatedURL)return;navigator.clipboard.writeText(generatedURL).then(()=>{const btn=document.getElementById('btn-copy');btn.textContent='✅ コピーしました！';btn.style.color='#00D4AA';setTimeout(()=>{btn.textContent='📋 URLをコピー';btn.style.color='var(--accent)';},2500);});}
+function setScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function fadeTransition(cb){const ov=document.getElementById('overlay');ov.classList.add('fade-in');setTimeout(()=>{cb();ov.classList.remove('fade-in');},400);}
+function goToRoulette(){document.getElementById('roulette-prize').textContent=currentPrize;document.getElementById('spin-btn').disabled=false;document.getElementById('spin-btn').textContent='START';spinning=false;currentAngle=0;fadeTransition(()=>{setScreen('roulette');drawWheel(0);playReadySound();});}
+function goBack(){stopBGM();cancelAnimationFrame(animFrame);spinning=false;currentAngle=0;document.getElementById('spin-btn').disabled=false;document.getElementById('spin-btn').textContent='START';fadeTransition(()=>setScreen('setup'));}
+function getValid(){return participants.filter(p=>p.name.trim()&&parseFloat(p.prob)>0).map(p=>({name:p.name.trim(),prob:parseFloat(p.prob)}));}
+function drawWheel(angle){const canvas=document.getElementById('wheel');const ctx=canvas.getContext('2d');const cx=canvas.width/2,cy=canvas.height/2,r=canvas.width/2-4;const parts=getValid(),n=parts.length;if(n===0)return;ctx.clearRect(0,0,canvas.width,canvas.height);const sweep=(Math.PI*2)/n;let start=angle-Math.PI/2;parts.forEach((p,i)=>{const mid=start+sweep/2;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,start,start+sweep);ctx.closePath();ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=2;ctx.stroke();const sliceDeg=sweep*180/Math.PI;const fontSize=Math.max(9,Math.min(15,sliceDeg*0.5));ctx.save();ctx.translate(cx+Math.cos(mid)*r*0.62,cy+Math.sin(mid)*r*0.62);ctx.rotate(mid+Math.PI/2);ctx.fillStyle='#fff';ctx.font=`bold ${fontSize}px 'Noto Sans JP', sans-serif`;ctx.textAlign='center';ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=3;const name=p.name;if(name.length<=5||sliceDeg>=60){ctx.fillText(name,0,fontSize*0.4);}else{const half=Math.ceil(name.length/2);ctx.fillText(name.slice(0,half),0,-fontSize*0.3);ctx.fillText(name.slice(half),0,fontSize*0.9);}ctx.restore();start+=sweep;});ctx.beginPath();ctx.arc(cx,cy,28,0,Math.PI*2);ctx.fillStyle='#0A0A1A';ctx.fill();ctx.strokeStyle='rgba(245,200,66,0.6)';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#F5C842';ctx.font=`bold 14px 'Noto Sans JP', sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GO',cx,cy);}
+function startSpin(){if(spinning)return;spinning=true;document.getElementById('spin-btn').disabled=true;document.getElementById('spin-btn').textContent='…';startBGM();const parts=getValid(),n=parts.length,sweep=(Math.PI*2)/n;const total=parts.reduce((s,p)=>s+p.prob,0);let r=Math.random()*total,winnerIndex=n-1;for(let i=0;i<n;i++){r-=parts[i].prob;if(r<=0){winnerIndex=i;break;}}const winner=parts[winnerIndex];const sliceCenter=winnerIndex*sweep+sweep/2;const extraSpins=Math.PI*2*(8+Math.random()*4);animateSpin(currentAngle,-sliceCenter+extraSpins,10000,winner);}
+function animateSpin(from,to,dur,winner){const t0=performance.now();function ease(t){return 1-Math.pow(1-t,4);}function frame(now){const t=Math.min((now-t0)/dur,1);currentAngle=from+(to-from)*ease(t);drawWheel(currentAngle);if(t<1){animFrame=requestAnimationFrame(frame);}else{currentAngle=to;spinning=false;stopBGM();setTimeout(()=>showWinner(winner),400);}}animFrame=requestAnimationFrame(frame);}
+function showWinner(winner){document.getElementById('winner-name').textContent=winner?winner.name:'—';playWinSound();fadeTransition(()=>{setScreen('winner');startFireworks();});}
+function startFireworks(){const c=document.getElementById('fireworks');c.width=innerWidth;c.height=innerHeight;fireworksCtx=c.getContext('2d');fireworksParticles=[];launchFirework();launchFirework();requestAnimationFrame(animFW);}
+function launchFirework(){const x=Math.random()*innerWidth,y=Math.random()*innerHeight*0.6;const clrs=['#F5C842','#7B5FFF','#FF5F9E','#00D4AA','#FF7A1F','#fff'];const color=clrs[Math.floor(Math.random()*clrs.length)];for(let i=0;i<60;i++){const a=Math.PI*2*i/60,s=2+Math.random()*5;fireworksParticles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,alpha:1,color,size:2+Math.random()*3,life:80+Math.random()*60});}}
+function animFW(){if(!document.getElementById('winner').classList.contains('active'))return;fireworksCtx.clearRect(0,0,fireworksCtx.canvas.width,fireworksCtx.canvas.height);fireworksParticles=fireworksParticles.filter(p=>p.alpha>0.01);fireworksParticles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.08;p.vx*=0.98;p.alpha-=1/p.life;fireworksCtx.beginPath();fireworksCtx.arc(p.x,p.y,p.size,0,Math.PI*2);fireworksCtx.fillStyle=p.color;fireworksCtx.globalAlpha=p.alpha;fireworksCtx.fill();fireworksCtx.globalAlpha=1;});if(Math.random()<0.04)launchFirework();requestAnimationFrame(animFW);}
 loadData();
 </script>
 </body>
